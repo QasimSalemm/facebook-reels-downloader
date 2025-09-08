@@ -1,4 +1,5 @@
 import datetime
+import time
 import logging
 import streamlit as st
 import os
@@ -37,11 +38,10 @@ def clean_facebook_url(url: str) -> str:
 def is_valid_facebook_video_url(url: str) -> bool:
     """Check if URL looks like a valid Facebook Reels or Video link."""
     fb_video_pattern = re.compile(
-        r'^(https?:\/\/)?([a-zA-Z0-9-]+\.)?facebook\.com\/(.*\/videos\/\d+|reel\/\d+)|^(https?:\/\/)?fb\.watch\/[A-Za-z0-9_-]+',
+        r'^(https?:\/\/)?([a-zA-Z0-9-]+\.)?(facebook\.com\/(.*\/videos\/\d+|reel\/\d+)|fb\.watch\/[A-Za-z0-9_-]+)',
         re.IGNORECASE
     )
     return bool(fb_video_pattern.match(url.strip()))
-
 
 # -----------------------------
 # Video download function
@@ -70,11 +70,16 @@ def download_video(video_url, progress_callback):
         info = ydl.extract_info(video_url, download=True)
         file_path = ydl.prepare_filename(info)
 
+    # ✅ Ensure extension exists
+    if not Path(file_path).suffix:
+        file_path = f"{file_path}.{info.get('ext', 'mp4')}"
+
     return file_path
 
 # -----------------------------
 # Streamlit UI
 # -----------------------------
+
 st.set_page_config(
     page_title="Facebook Reels Downloader - Save Videos in HD Free",
     page_icon="images/facebook_downloader.png",
@@ -84,19 +89,43 @@ st.title("Download Facebook Reels Videos Online in HD Quality")
 st.write("Fast and free Facebook Reels Downloader. Save Reels videos in HD directly to your device. No watermark, no signup - just paste the link and download instantly.")
 st.divider()
 
-urls_input = st.text_area("Video URLs (one per line)")
 
+
+# -----------------------------
+# Handle Refresh first
+# -----------------------------
+if "clear" not in st.session_state:
+    st.session_state.clear = False
+_,_,_,refresh = st.columns([3, 3, 2, 2])
+with refresh:
+    if st.button("Refresh !", help="This will clear all data."):
+        st.session_state.clear = True
+        st.rerun()
+
+# If refresh flag set, clear urls_input before text area is created
+if st.session_state.get("clear", False):
+    st.session_state["urls_input"] = ""
+    st.session_state.clear = False   # reset flag
+
+# -----------------------------
+# Text area for URLs
+# -----------------------------
+urls_input = st.text_area("Video URLs (one per line)", key="urls_input")
+
+# -----------------------------
+# Download button and logic
+# -----------------------------
 if st.button("Download Videos"):
     if not urls_input.strip():
         st.warning("Please enter at least one URL!")
     else:
-        # Remove duplicates, validate, and clean
+        # ✅ Your existing deduplication & validation logic
         seen = set()
         urls = []
         for u in urls_input.split("\n"):
             u = u.strip()
             if u:
-                u = clean_facebook_url(u)  # auto-clean first
+                u = clean_facebook_url(u)
                 if u not in seen:
                     if is_valid_facebook_video_url(u):
                         seen.add(u)
@@ -111,7 +140,11 @@ if st.button("Download Videos"):
             video_rows = []
             for idx, url in enumerate(urls, start=1):
                 cols = st.columns([3, 3, 2, 2])
-                cols[0].markdown(f"<div style='white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width:250px;'>{url}</div>", unsafe_allow_html=True)
+                cols[0].markdown(
+                    f"<div style='white-space: nowrap; overflow: hidden; "
+                    f"text-overflow: ellipsis; max-width:250px;'>{url}</div>",
+                    unsafe_allow_html=True
+                )
                 progress_bar = cols[1].progress(0)
                 status_text = cols[2].empty()
                 status_text.text("Waiting...")
@@ -123,7 +156,7 @@ if st.button("Download Videos"):
                     "download_btn": download_btn_placeholder
                 })
 
-            # Batch progress
+            # Batch progress if multiple
             if total_videos > 1:
                 batch_progress = st.progress(0)
                 batch_status = st.empty()
@@ -131,9 +164,7 @@ if st.button("Download Videos"):
                 batch_progress = None
                 batch_status = None
 
-            # Download videos
-            success_count = 0
-            failed_count = 0
+            success_count, failed_count = 0, 0
 
             with st.spinner("Downloading ..."):
                 for row in video_rows:
@@ -146,32 +177,39 @@ if st.button("Download Videos"):
                         file_path = download_video(row["url"], update_progress)
                         row["status"].text("Completed ✅")
 
-                        # Show download button
+                        # Safe file handling
                         mime_type, _ = mimetypes.guess_type(file_path)
-                        row["download_btn"].download_button(
-                            label="⬇ Download",
-                            data=open(file_path, "rb"),
-                            file_name=os.path.basename(file_path),
-                            mime=mime_type or "application/octet-stream"
-                        )
+                        with open(file_path, "rb") as f:
+                            video_data = f.read()
+
+                        # Right-aligned download button
+                        btn_cols = st.columns([6, 2])
+                        with btn_cols[1]:
+                            row["download_btn"].download_button(
+                                label="⬇ Download",
+                                data=video_data,
+                                file_name=os.path.basename(file_path),
+                                mime=mime_type or "application/octet-stream"
+                            )
                         success_count += 1
 
                     except Exception as e:
                         logging.error(f"Failed to download {row['url']}: {e}")
-                        row["status"].markdown("❌")
-                        row["download_btn"].markdown("Failed",help="Something went wrong! Refresh browser and **Try Again!**")
+                        # ✅ Keep alignment by putting fail message in the same last column
+                        row["download_btn"].markdown("❌ Failed", help="**Refresh** and try again!")
                         failed_count += 1
 
-                    # Update batch progress after each video
+                    # Update batch progress
                     if total_videos > 1:
                         batch_progress.progress((success_count + failed_count) / total_videos)
                         batch_status.text(f"✅ {success_count} | ❌ {failed_count} | Total: {total_videos}")
+
             if success_count > 0:
                 st.info(f"Videos are saved to: {DOWNLOAD_DIR}")
 
 # Footer
 st.write("---")
 year = datetime.datetime.now().year
-_, col, _ = st.columns([4, 2.5, 4])  # empty, center, empty
+_, col, _ = st.columns([4, 2.5, 2])
 with col:
     st.caption(f"© {year} All rights reserved.")
