@@ -1,6 +1,7 @@
 import datetime
 import time
 import logging
+import pyperclip
 import streamlit as st
 import os
 import yt_dlp
@@ -9,13 +10,20 @@ from pathlib import Path
 import re
 from urllib.parse import urlparse, urlunparse
 
+# Initialize session state
+if "urls_input" not in st.session_state:
+    st.session_state["urls_input"] = ""
+if "clipboard_checked" not in st.session_state:
+    st.session_state["clipboard_checked"] = False
+
 logging.basicConfig(level=logging.ERROR)
 
 # -----------------------------
 # Setup download folder in Downloads
 # -----------------------------
+
 downloads_path = Path.home() / "Downloads"
-DOWNLOAD_DIR = downloads_path / "Facebook_Reels"
+DOWNLOAD_DIR = downloads_path  # just Downloads
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 # -----------------------------
@@ -34,6 +42,42 @@ def clean_facebook_url(url: str) -> str:
     parsed = urlparse(url.strip())
     clean = parsed._replace(query="", fragment="")
     return urlunparse(clean)
+# -----------------------------
+# Enhanced Get URL button logic
+# -----------------------------
+
+# -----------------------------
+# Message placeholder
+# -----------------------------
+msg_placeholder = st.empty()
+
+# -----------------------------
+# Clipboard logic (runs only once per session)
+# -----------------------------
+def append_clipboard_urls():
+    try:
+        clipboard_text = pyperclip.paste().strip()
+        if not clipboard_text:
+            return
+
+        potential_urls = re.split(r'[\s\n]+', clipboard_text)
+        existing_links = set(
+            line.strip() for line in st.session_state["urls_input"].splitlines() if line.strip()
+        )
+
+        added_count = 0
+        for url in potential_urls:
+            url = url.strip()
+            if url and is_valid_facebook_video_url(url) and url not in existing_links:
+                if st.session_state["urls_input"]:
+                    st.session_state["urls_input"] += "\n" + url
+                else:
+                    st.session_state["urls_input"] = url
+                existing_links.add(url)
+                added_count += 1
+
+    except Exception as e:
+        msg_placeholder.warning(f"⚠️ Could not read clipboard: {e}")
 
 def is_valid_facebook_video_url(url: str) -> bool:
     """Check if URL looks like a valid Facebook Reels or Video link."""
@@ -46,6 +90,7 @@ def is_valid_facebook_video_url(url: str) -> bool:
 # -----------------------------
 # Video download function
 # -----------------------------
+
 def download_video(video_url, progress_callback):
     def progress_hook(d):
         if d['status'] == 'downloading':
@@ -59,13 +104,13 @@ def download_video(video_url, progress_callback):
 
     ydl_opts = {
         'format': 'best',
-        'paths': {'home': str(DOWNLOAD_DIR)},  # force save dir
-        'outtmpl': 'video_%(id)s.%(ext)s',
+        'outtmpl': str(DOWNLOAD_DIR / 'video_%(id)s.%(ext)s'),  # absolute path in Downloads
         'quiet': True,
         'no_warnings': True,
         'progress_hooks': [progress_hook],
         'logger': MyLogger(),
     }
+
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(video_url, download=True)
         file_path = ydl.prepare_filename(info)
@@ -90,27 +135,35 @@ st.write("Fast and free Facebook Reels Downloader. Save Reels videos in HD direc
 st.divider()
 
 
+# Run only once on page load
+if not st.session_state["clipboard_checked"]:
+    append_clipboard_urls()
+    st.session_state["clipboard_checked"] = True
 
 # -----------------------------
-# Handle Refresh first
+# Buttons
 # -----------------------------
-if "clear" not in st.session_state:
-    st.session_state.clear = False
-_,_,_,refresh = st.columns([3, 3, 2, 2])
-with refresh:
-    if st.button("Refresh !", help="This will clear all data."):
-        st.session_state.clear = True
-        st.rerun()
+_, refresh_col, get_url_col = st.columns([6, 1.2, 1.2])
+refresh_clicked = refresh_col.button("Refresh", help="This will clear all data & refresh page.")
+get_url_clicked = get_url_col.button("Get URL", help="Click here to get copied URL.")
 
-# If refresh flag set, clear urls_input before text area is created
-if st.session_state.get("clear", False):
+if refresh_clicked:
     st.session_state["urls_input"] = ""
-    st.session_state.clear = False   # reset flag
+    st.session_state["clipboard_checked"] = False
+    st.rerun()
+
+if get_url_clicked:
+    append_clipboard_urls()
+    st.rerun()
 
 # -----------------------------
-# Text area for URLs
+# Text area
 # -----------------------------
-urls_input = st.text_area("Video URLs (one per line)", key="urls_input")
+urls_input = st.text_area(
+    "Video URLs (one per line)",
+    key="urls_input",
+    height=150
+)
 
 # -----------------------------
 # Download button and logic
