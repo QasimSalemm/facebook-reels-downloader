@@ -8,7 +8,7 @@ import mimetypes
 from pathlib import Path
 import re
 from urllib.parse import urlparse, urlunparse
-from clipboard_component import paste_component
+import clipboard_component
 
 # -----------------------------
 # Initialize session state
@@ -96,7 +96,7 @@ st.divider()
 # Clipboard paste button
 # -----------------------------
 
-clipboard_content = paste_component("Get Url")
+clipboard_content =clipboard_component. paste_component("Get Url")
 if clipboard_content:
     potential_urls = re.split(r'[\s\n]+', clipboard_content.strip())
     existing_links = set(
