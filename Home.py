@@ -8,6 +8,13 @@ import mimetypes
 from pathlib import Path
 import re
 from urllib.parse import urlparse, urlunparse
+from clipboard_component import paste_component
+
+# -----------------------------
+# Initialize session state
+# -----------------------------
+if "urls_input" not in st.session_state:
+    st.session_state["urls_input"] = ""
 
 logging.basicConfig(level=logging.ERROR)
 
@@ -15,12 +22,8 @@ logging.basicConfig(level=logging.ERROR)
 # Setup download folder in Downloads
 # -----------------------------
 downloads_path = Path.home() / "Downloads"
-DOWNLOAD_DIR = downloads_path  # just Downloads
+DOWNLOAD_DIR = downloads_path
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-
-# downloads_path = Path.home() / "Downloads"
-# DOWNLOAD_DIR = downloads_path / "Facebook_Reels"
-# os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 # -----------------------------
 # Logger for yt_dlp to suppress output
@@ -34,13 +37,11 @@ class MyLogger:
 # URL cleaning and validation
 # -----------------------------
 def clean_facebook_url(url: str) -> str:
-    """Remove query parameters and fragments from a Facebook URL."""
     parsed = urlparse(url.strip())
     clean = parsed._replace(query="", fragment="")
     return urlunparse(clean)
 
 def is_valid_facebook_video_url(url: str) -> bool:
-    """Check if URL looks like a valid Facebook Reels or Video link."""
     fb_video_pattern = re.compile(
         r'^(https?:\/\/)?([a-zA-Z0-9-]+\.)?(facebook\.com\/(.*\/videos\/\d+|reel\/\d+)|fb\.watch\/[A-Za-z0-9_-]+)',
         re.IGNORECASE
@@ -60,19 +61,20 @@ def download_video(video_url, progress_callback):
                 progress_callback(progress)
         elif d['status'] == 'finished':
             progress_callback(1.0)
+
     ydl_opts = {
         'format': 'best',
-        'outtmpl': str(DOWNLOAD_DIR / 'video_%(id)s.%(ext)s'),  # absolute path in Downloads
+        'outtmpl': str(DOWNLOAD_DIR / '%(title).50s_%(id)s.%(ext)s'),
         'quiet': True,
         'no_warnings': True,
         'progress_hooks': [progress_hook],
         'logger': MyLogger(),
     }
+
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(video_url, download=True)
         file_path = ydl.prepare_filename(info)
 
-    # ✅ Ensure extension exists
     if not Path(file_path).suffix:
         file_path = f"{file_path}.{info.get('ext', 'mp4')}"
 
@@ -81,7 +83,6 @@ def download_video(video_url, progress_callback):
 # -----------------------------
 # Streamlit UI
 # -----------------------------
-
 st.set_page_config(
     page_title="Facebook Reels Downloader - Save Videos in HD Free",
     page_icon="images/facebook_downloader.png",
@@ -91,28 +92,46 @@ st.title("Download Facebook Reels Videos Online in HD Quality")
 st.write("Fast and free Facebook Reels Downloader. Save Reels videos in HD directly to your device. No watermark, no signup - just paste the link and download instantly.")
 st.divider()
 
+# -----------------------------
+# Clipboard paste button
+# -----------------------------
 
+clipboard_content = paste_component("Get Url")
+if clipboard_content:
+    potential_urls = re.split(r'[\s\n]+', clipboard_content.strip())
+    existing_links = set(
+        line.strip() for line in st.session_state["urls_input"].splitlines() if line.strip()
+    )
+    added_count = 0
+    for url in potential_urls:
+        url = clean_facebook_url(url)
+        if is_valid_facebook_video_url(url) and url not in existing_links:
+            if st.session_state["urls_input"]:
+                st.session_state["urls_input"] += "\n" + url
+            else:
+                st.session_state["urls_input"] = url
+            existing_links.add(url)
+            added_count += 1
+    if added_count > 0:
+        st.success(f"✅ Added {added_count} URL(s) from clipboard!")
+    else:
+        st.warning("⚠️ No new valid Facebook video URLs found in clipboard.")
 
 # -----------------------------
-# Handle Refresh first
+# Buttons
 # -----------------------------
-if "clear" not in st.session_state:
-    st.session_state.clear = False
-_,_,_,refresh = st.columns([3, 3, 2, 2])
-with refresh:
-    if st.button("Refresh !", help="This will clear all data."):
-        st.session_state.clear = True
-        st.rerun()
-
-# If refresh flag set, clear urls_input before text area is created
-if st.session_state.get("clear", False):
+if st.button("Refresh", help="This will clear all data & refresh page."):
     st.session_state["urls_input"] = ""
-    st.session_state.clear = False   # reset flag
+    st.rerun()
 
 # -----------------------------
-# Text area for URLs
+# Text area
 # -----------------------------
-urls_input = st.text_area("Video URLs (one per line)", key="urls_input")
+urls_input = st.text_area(
+    "Video URLs (one per line)",
+    key="urls_input",
+    height=150
+)
 
 # -----------------------------
 # Download button and logic
@@ -121,7 +140,6 @@ if st.button("Download Videos"):
     if not urls_input.strip():
         st.warning("Please enter at least one URL!")
     else:
-        # ✅ Your existing deduplication & validation logic
         seen = set()
         urls = []
         for u in urls_input.split("\n"):
@@ -158,7 +176,6 @@ if st.button("Download Videos"):
                     "download_btn": download_btn_placeholder
                 })
 
-            # Batch progress if multiple
             if total_videos > 1:
                 batch_progress = st.progress(0)
                 batch_status = st.empty()
@@ -179,12 +196,10 @@ if st.button("Download Videos"):
                         file_path = download_video(row["url"], update_progress)
                         row["status"].text("Completed ✅")
 
-                        # Safe file handling
                         mime_type, _ = mimetypes.guess_type(file_path)
                         with open(file_path, "rb") as f:
                             video_data = f.read()
 
-                        # Right-aligned download button
                         btn_cols = st.columns([6, 2])
                         with btn_cols[1]:
                             row["download_btn"].download_button(
@@ -197,11 +212,10 @@ if st.button("Download Videos"):
 
                     except Exception as e:
                         logging.error(f"Failed to download {row['url']}: {e}")
-                        # ✅ Keep alignment by putting fail message in the same last column
-                        row["download_btn"].markdown("❌ Failed", help="**Refresh** and try again!")
+                        row["status"].text("❌ Failed")
+                        row["download_btn"].empty()
                         failed_count += 1
 
-                    # Update batch progress
                     if total_videos > 1:
                         batch_progress.progress((success_count + failed_count) / total_videos)
                         batch_status.text(f"✅ {success_count} | ❌ {failed_count} | Total: {total_videos}")
@@ -209,7 +223,9 @@ if st.button("Download Videos"):
             if success_count > 0:
                 st.info(f"Videos are saved to: {DOWNLOAD_DIR}")
 
+# -----------------------------
 # Footer
+# -----------------------------
 st.write("---")
 year = datetime.datetime.now().year
 _, col, _ = st.columns([4, 2.5, 2])
