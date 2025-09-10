@@ -15,43 +15,43 @@ _copy_component_func = components.declare_component("copy_component", path=build
 # `declare_component` and call it done. The wrapper allows us to customize
 # our component's API: we can pre-process its input args, post-process its
 # output value, and add a docstring for users.
-def paste_component(name: str, disabled: bool = False) -> str:
-    """Create a new instance of "paste_component" for reading clipboard content.
-
-    Parameters
-    ----------
-    name: str
-        The name of the component instance.
-
-    Returns
-    -------
-    str
-        The content read from clipboard after button click.
-    """
+def paste_component(
+    name: str,
+    disabled: bool = False,
+    styles: dict = None
+) -> str:
+    """Custom clipboard button with full styling control."""
     if 'clipboard_processed' not in st.session_state:
         st.session_state.clipboard_processed = 0
-    component_value = _paste_component_func(name=name, disabled=disabled)
+
+    component_value = _paste_component_func(
+        name=name,
+        disabled=disabled,
+        styles=styles or {}
+    )
+
     if not component_value or 'timestamp' not in component_value:
         return None
+
     if component_value['timestamp'] > st.session_state.clipboard_processed:
         st.session_state.clipboard_processed = component_value['timestamp']
         return component_value['text']
+
     return None
 
-def copy_component(name: str, content: str, disabled: bool = False) -> None:
-    """Create a new instance of "copy_component" for copying content to clipboard.
 
-    Parameters
-    ----------
-    name: str
-        The name of the component instance.
-    content: str
-        The content to be copied to clipboard when button is clicked.
 
-    Returns
-    -------
-    None
-        This component doesn't return any value.
-    """
-    component_value = _copy_component_func(name=name, content=content, disabled=disabled)
+def copy_component(
+    name: str,
+    content: str,
+    disabled: bool = False,
+    styles: dict = None
+) -> None:
+    """Create a new instance of 'copy_component' for copying content to clipboard."""
+    component_value = _copy_component_func(
+        name=name,
+        content=content,
+        disabled=disabled,
+        styles=styles or {}
+    )
     return component_value

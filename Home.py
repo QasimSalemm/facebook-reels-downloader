@@ -96,7 +96,7 @@ st.divider()
 # Clipboard paste button
 # -----------------------------
 
-clipboard_content =clipboard_component. paste_component("Get Url")
+clipboard_content =clipboard_component. paste_component("Get URL",styles={"borderColor": "mediumSlateBlue","hoverBackgroundColor": "#1E2429"})
 if clipboard_content:
     potential_urls = re.split(r'[\s\n]+', clipboard_content.strip())
     existing_links = set(
