@@ -11,10 +11,14 @@ from urllib.parse import urlparse, urlunparse
 import clipboard_component
 
 # -----------------------------
-# Initialize session state
+# Initialize session state for urls and download status
 # -----------------------------
 if "urls_input" not in st.session_state:
     st.session_state["urls_input"] = ""
+if "download_queue" not in st.session_state:
+    st.session_state["download_queue"] = []
+if "is_processing" not in st.session_state:
+    st.session_state["is_processing"] = False
 
 logging.basicConfig(level=logging.ERROR)
 
@@ -37,11 +41,13 @@ class MyLogger:
 # URL cleaning and validation
 # -----------------------------
 def clean_facebook_url(url: str) -> str:
+    """Cleans Facebook URL to its base form."""
     parsed = urlparse(url.strip())
     clean = parsed._replace(query="", fragment="")
     return urlunparse(clean)
 
 def is_valid_facebook_video_url(url: str) -> bool:
+    """Validates if a URL is a known Facebook video or reel format."""
     fb_video_pattern = re.compile(
         r'^(https?:\/\/)?([a-zA-Z0-9-]+\.)?(facebook\.com\/(.*\/videos\/\d+|reel\/\d+)|fb\.watch\/[A-Za-z0-9_-]+)',
         re.IGNORECASE
@@ -52,6 +58,7 @@ def is_valid_facebook_video_url(url: str) -> bool:
 # Video download function
 # -----------------------------
 def download_video(video_url, progress_callback):
+    """Downloads a video and returns its local path."""
     def progress_hook(d):
         if d['status'] == 'downloading':
             total_bytes = d.get('total_bytes') or d.get('total_bytes_estimate')
@@ -71,14 +78,18 @@ def download_video(video_url, progress_callback):
         'logger': MyLogger(),
     }
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(video_url, download=True)
-        file_path = ydl.prepare_filename(info)
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=True)
+            file_path = ydl.prepare_filename(info)
 
-    if not Path(file_path).suffix:
-        file_path = f"{file_path}.{info.get('ext', 'mp4')}"
+        if not Path(file_path).suffix:
+            file_path = f"{file_path}.{info.get('ext', 'mp4')}"
 
-    return file_path
+        return file_path
+    except Exception as e:
+        logging.error(f"Failed to download {video_url}: {e}")
+        return None
 
 # -----------------------------
 # Streamlit UI
@@ -93,14 +104,39 @@ st.write("Fast and free Facebook Reels Downloader. Save Reels videos in HD direc
 st.divider()
 
 # -----------------------------
-# Clipboard paste button
+# Clipboard + Refresh Buttons
 # -----------------------------
+_, col1, col2 = st.columns([5, 1.2, 1.2])
 
-clipboard_content =clipboard_component. paste_component("Get URL",styles={"borderColor": "mediumSlateBlue","hoverBackgroundColor": "#1E2429"})
+with col1:
+    clipboard_content = clipboard_component.paste_component(
+        "📋 Get URL",
+        styles={
+            "borderColor": "mediumSlateBlue",
+            "hoverBackgroundColor": "#1E2429",
+            "backgroundColor": "#2C3137",
+            "textColor": "white",
+            "borderRadius": "6px",
+            "padding": "6px 12px",
+        },
+    )
+
+with col2:
+    if st.button("🔄 Refresh", help="This will clear all data & refresh page."):
+        st.session_state["urls_input"] = ""
+        st.session_state["download_queue"] = []
+        st.session_state["is_processing"] = False
+        st.rerun()
+
+# -----------------------------
+# Handle Clipboard Content
+# -----------------------------
 if clipboard_content:
     potential_urls = re.split(r'[\s\n]+', clipboard_content.strip())
     existing_links = set(
-        line.strip() for line in st.session_state["urls_input"].splitlines() if line.strip()
+        line.strip()
+        for line in st.session_state["urls_input"].splitlines()
+        if line.strip()
     )
     added_count = 0
     for url in potential_urls:
@@ -112,17 +148,11 @@ if clipboard_content:
                 st.session_state["urls_input"] = url
             existing_links.add(url)
             added_count += 1
+
     if added_count > 0:
         st.success(f"✅ Added {added_count} URL(s) from clipboard!")
     else:
         st.warning("⚠️ No new valid Facebook video URLs found in clipboard.")
-
-# -----------------------------
-# Buttons
-# -----------------------------
-if st.button("Refresh", help="This will clear all data & refresh page."):
-    st.session_state["urls_input"] = ""
-    st.rerun()
 
 # -----------------------------
 # Text area
@@ -134,14 +164,14 @@ urls_input = st.text_area(
 )
 
 # -----------------------------
-# Download button and logic
+# Main download logic
 # -----------------------------
-if st.button("Download Videos"):
+if st.button("Start Processing", disabled=st.session_state["is_processing"]):
     if not urls_input.strip():
         st.warning("Please enter at least one URL!")
     else:
         seen = set()
-        urls = []
+        st.session_state["download_queue"] = []
         for u in urls_input.split("\n"):
             u = u.strip()
             if u:
@@ -149,79 +179,99 @@ if st.button("Download Videos"):
                 if u not in seen:
                     if is_valid_facebook_video_url(u):
                         seen.add(u)
-                        urls.append(u)
+                        st.session_state["download_queue"].append({"url": u, "status": "waiting", "file_path": None, "progress": 0})
                     else:
                         st.warning(f"⚠️ Skipped invalid or non-video URL: {u}")
-
-        total_videos = len(urls)
-        if total_videos == 0:
+        
+        if not st.session_state["download_queue"]:
             st.warning("No valid Facebook video URLs found!")
         else:
-            video_rows = []
-            for idx, url in enumerate(urls, start=1):
-                cols = st.columns([3, 3, 2, 2])
-                cols[0].markdown(
-                    f"<div style='white-space: nowrap; overflow: hidden; "
-                    f"text-overflow: ellipsis; max-width:250px;'>{url}</div>",
-                    unsafe_allow_html=True
+            st.session_state["is_processing"] = True
+            st.rerun()
+
+# Display download status and start downloads
+if st.session_state["download_queue"]:
+    for idx, video in enumerate(st.session_state["download_queue"]):
+        video_url = video["url"]
+        
+        cols = st.columns([2.5, 2.5, 1.5, 1.5])
+        
+        # Column 1: Link
+        cols[0].markdown(
+            f"<div style='white-space: nowrap; overflow: hidden; "
+            f"text-overflow: ellipsis; max-width:250px;'>{video_url}</div>",
+            unsafe_allow_html=True
+        )
+
+        # Handle different download statuses
+        if video["status"] == "waiting":
+            cols[1].progress(0.0)
+            cols[2].text("waiting...")
+            cols[3].text("- - - - - - - - - - -")
+        elif video["status"] == "downloading":
+            cols[1].progress(video.get("progress", 0.0), text=f"{int(video.get('progress', 0.0)*100)}%")
+            cols[2].text("downloading...")
+            cols[3].text("- - - - - - - - - - -")
+        elif video["status"] == "success":
+            cols[1].progress(1.0)
+            cols[2].markdown("✅ Success")
+            file_path = video["file_path"]
+            if file_path and os.path.exists(file_path):
+                mime_type, _ = mimetypes.guess_type(file_path)
+                with open(file_path, "rb") as f:
+                    video_data = f.read()
+                cols[3].download_button(
+                    label="Download",
+                    data=video_data,
+                    file_name=os.path.basename(file_path),
+                    mime=mime_type or "application/octet-stream",
+                    key=f"download_{idx}"
                 )
-                progress_bar = cols[1].progress(0)
-                status_text = cols[2].empty()
-                status_text.text("Waiting...")
-                download_btn_placeholder = cols[3].empty()
-                video_rows.append({
-                    "url": url,
-                    "progress": progress_bar,
-                    "status": status_text,
-                    "download_btn": download_btn_placeholder
-                })
+        elif video["status"] == "failed":
+            cols[1].progress(0)
+            cols[2].markdown("❌ Failed")
+            if cols[3].button("Try Again", key=f"retry_{idx}"):
+                st.session_state["download_queue"][idx]["status"] = "waiting"
+                st.session_state["is_processing"] = True
+                st.rerun()
 
-            if total_videos > 1:
-                batch_progress = st.progress(0)
-                batch_status = st.empty()
-            else:
-                batch_progress = None
-                batch_status = None
+    # Process next video in the queue if one is not already downloading
+    if st.session_state["is_processing"]:
+        next_video_to_process = None
+        for idx, video in enumerate(st.session_state["download_queue"]):
+            if video["status"] == "waiting":
+                next_video_to_process = idx
+                break
+        
+        if next_video_to_process is not None:
+            with st.spinner(f"Downloading video: {next_video_to_process + 1}"):
+                st.session_state["download_queue"][next_video_to_process]["status"] = "downloading"
+                video_url_to_download = st.session_state["download_queue"][next_video_to_process]["url"]
+                
+                # A hack to pass progress updates back to the session state
+                class ProgressWrapper:
+                    def __init__(self, idx):
+                        self.idx = idx
+                    def __call__(self, p):
+                        st.session_state["download_queue"][self.idx]["progress"] = p
+                        time.sleep(0.01) # Small sleep to allow UI to update
+                        
+                file_path = download_video(video_url_to_download, ProgressWrapper(next_video_to_process))
+                
+                if file_path:
+                    st.session_state["download_queue"][next_video_to_process]["status"] = "success"
+                    st.session_state["download_queue"][next_video_to_process]["file_path"] = file_path
+                else:
+                    st.session_state["download_queue"][next_video_to_process]["status"] = "failed"
+                
+                st.rerun()
+        else:
+            st.session_state["is_processing"] = False
+            st.success("All videos have been processed!")
+            st.rerun()
 
-            success_count, failed_count = 0, 0
-
-            with st.spinner("Downloading ..."):
-                for row in video_rows:
-                    def update_progress(p, row=row):
-                        row["progress"].progress(p)
-                        row["status"].text(f"{int(p*100)}%")
-
-                    try:
-                        row["status"].text("Downloading...")
-                        file_path = download_video(row["url"], update_progress)
-                        row["status"].text("Completed ✅")
-
-                        mime_type, _ = mimetypes.guess_type(file_path)
-                        with open(file_path, "rb") as f:
-                            video_data = f.read()
-
-                        btn_cols = st.columns([6, 2])
-                        with btn_cols[1]:
-                            row["download_btn"].download_button(
-                                label="⬇ Download",
-                                data=video_data,
-                                file_name=os.path.basename(file_path),
-                                mime=mime_type or "application/octet-stream"
-                            )
-                        success_count += 1
-
-                    except Exception as e:
-                        logging.error(f"Failed to download {row['url']}: {e}")
-                        row["status"].text("❌ Failed")
-                        row["download_btn"].empty()
-                        failed_count += 1
-
-                    if total_videos > 1:
-                        batch_progress.progress((success_count + failed_count) / total_videos)
-                        batch_status.text(f"✅ {success_count} | ❌ {failed_count} | Total: {total_videos}")
-
-            if success_count > 0:
-                st.info(f"Videos are saved to: {DOWNLOAD_DIR}")
+    if any(v['status'] == "success" for v in st.session_state["download_queue"]):
+        st.info(f"Downloads are saved to: {DOWNLOAD_DIR}")
 
 # -----------------------------
 # Footer
