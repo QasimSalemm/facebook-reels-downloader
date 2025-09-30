@@ -46,6 +46,13 @@ def clean_facebook_url(url: str) -> str:
     clean = parsed._replace(query="", fragment="")
     return urlunparse(clean)
 
+#This now matches:
+
+#www.facebook.com
+#m.facebook.com
+#web.facebook.com
+#fb.watch/...
+
 def is_valid_facebook_video_url(url: str) -> bool:
     """Validates if a URL is a known Facebook video or reel format."""
     # fb_video_pattern = re.compile(
