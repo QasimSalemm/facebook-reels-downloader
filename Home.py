@@ -53,8 +53,8 @@ def is_valid_facebook_video_url(url: str) -> bool:
     #     re.IGNORECASE
     # )
     fb_video_pattern = re.compile(
-    r'(https?://)?(www\.|m\.)?(facebook\.com/.*/videos/\d+|facebook\.com/reel/\d+|fb\.watch/[A-Za-z0-9_-]+)',
-    re.IGNORECASE
+        r'(https?://)?([a-z0-9-]+\.)?(facebook\.com/.*/videos/\d+|facebook\.com/reel/\d+|fb\.watch/[A-Za-z0-9_-]+)',
+        re.IGNORECASE
     )
     return bool(fb_video_pattern.match(url.strip()))
 
