@@ -58,13 +58,14 @@ def is_valid_facebook_video_url(url: str) -> bool:
     fb_video_pattern = re.compile(
         r'^(https?://)?'                                # optional http/https
         r'([a-z0-9-]+\.)?'                              # optional subdomain (www, m, web, l, etc.)
-        r'(facebook\.com|fb\.watch|fb\.me)/'            # facebook.com, fb.watch, fb.me
+        r'(facebook\.com|fb\.watch|fb\.me)/'            # main domains
         r'('
         r'[^ ]*/videos/\d+[^ ]*|'                       # /videos/123...
         r'reel/\d+[^ ]*|'                               # /reel/123...
         r'watch/\?v=\d+[^ ]*|'                          # /watch/?v=123...
         r'story\.php\?story_fbid=\d+[^ ]*|'             # story.php?story_fbid=...
-        r'[A-Za-z0-9_-]+/?'                             # fb.watch/abc123 OR fb.me/abc123
+        r'share/r/[A-Za-z0-9_-]+/?|'                    # /share/r/...
+        r'[A-Za-z0-9_-]+/?'                             # fb.watch/abc123 or fb.me/abc123
         r')',
         re.IGNORECASE
     )
