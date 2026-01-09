@@ -112,37 +112,42 @@ def download_video(video_url, progress_callback):
 # Streamlit UI
 # -----------------------------
 st.set_page_config(
-    page_title="Facebook Reels Downloader - Save Videos in HD Free",
+    page_title="Facebook Video & Reels Downloader",
     page_icon="images/facebook_downloader.png",
+    layout="wide"
 )
 
-st.title("Download Facebook Reels Videos Online in HD Quality")
-st.write("Fast and free Facebook Reels Downloader. Save Reels videos in HD directly to your device. No watermark, no signup - just paste the link and download instantly.")
+# --- Header Section ---
+st.title("Facebook Video & Reels Downloader")
+st.markdown("Download high-quality Facebook videos and reels quickly and easily.")
+
+# --- CSS Overrides ---
+
 st.divider()
 
-# -----------------------------
-# Clipboard + Refresh Buttons
-# -----------------------------
-_, col1, col2 = st.columns([5, 1.2, 1.2])
+# --- Control Section ---
+main_col, side_col = st.columns([3, 1])
 
-with col1:
+with side_col:
+    st.subheader("Actions")
+    
+    # Clipboard Tool (Styles now handled by injected CSS in index.html)
     clipboard_content = clipboard_component.paste_component(
-        "📋 Get URL",
-        styles={
-            "borderColor": "mediumSlateBlue",
-            "hoverBackgroundColor": "#1E2429",
-            "backgroundColor": "#2C3137",
-            "textColor": "white",
-            "borderRadius": "6px",
-            "padding": "6px 12px",
-        },
+        "📋 Paste Copied URL",
+        key="paste_clipboard",
+        width="100%", 
+        styles={},
     )
-
-with col2:
-    if st.button("🔄 Refresh", help="This will clear all data & refresh page."):
+    
+    # Refresh/Clear
+    if st.button("🔄 Refresh Page", use_container_width=True, help="Clear all data and reload."):
         st.session_state["urls_input"] = ""
         st.session_state["download_queue"] = []
         st.session_state["is_processing"] = False
+        st.rerun()
+
+    if st.button("🗑️ Clear Results", use_container_width=True, help="Clear the download results list."):
+        st.session_state["download_queue"] = []
         st.rerun()
 
 # -----------------------------
@@ -172,85 +177,86 @@ if clipboard_content:
         st.warning("⚠️ No new valid Facebook video URLs found in clipboard.")
 
 # -----------------------------
-# Text area
-# -----------------------------
-urls_input = st.text_area(
-    "Video URLs (one per line)",
-    key="urls_input",
-    height=150
-)
+with main_col:
+    # Text area
+    urls_input = st.text_area(
+        "Enter Facebook Video/Reel URLs (One per line):",
+        key="urls_input",
+        height=180,
+        placeholder="https://www.facebook.com/reel/..."
+    )
 
-# -----------------------------
-# Main download logic
-# -----------------------------
-if st.button("Start Processing", disabled=st.session_state["is_processing"]):
-    if not urls_input.strip():
-        st.warning("Please enter at least one URL!")
-    else:
-        seen = set()
-        st.session_state["download_queue"] = []
-        for u in urls_input.split("\n"):
-            u = u.strip()
-            if u:
-                u = clean_facebook_url(u)
-                if u not in seen:
-                    if is_valid_facebook_video_url(u):
-                        seen.add(u)
-                        st.session_state["download_queue"].append({"url": u, "status": "waiting", "file_path": None, "progress": 0})
-                    else:
-                        st.warning(f"⚠️ Skipped invalid or non-video URL: {u}")
-        
-        if not st.session_state["download_queue"]:
-            st.warning("No valid Facebook video URLs found!")
+    if st.button("🚀 Start Processing", type="primary", use_container_width=True, disabled=st.session_state["is_processing"]):
+        if not urls_input.strip():
+            st.warning("Please enter at least one URL!")
         else:
-            st.session_state["is_processing"] = True
-            st.rerun()
-
-# Display download status and start downloads
-if st.session_state["download_queue"]:
-    for idx, video in enumerate(st.session_state["download_queue"]):
-        video_url = video["url"]
-        
-        cols = st.columns([2.5, 2.5, 1.5, 1.5])
-        
-        # Column 1: Link
-        cols[0].markdown(
-            f"<div style='white-space: nowrap; overflow: hidden; "
-            f"text-overflow: ellipsis; max-width:250px;'>{video_url}</div>",
-            unsafe_allow_html=True
-        )
-
-        # Handle different download statuses
-        if video["status"] == "waiting":
-            cols[1].progress(0.0)
-            cols[2].text("waiting...")
-            cols[3].text("- - - - - - - - - - -")
-        elif video["status"] == "downloading":
-            cols[1].progress(video.get("progress", 0.0), text=f"{int(video.get('progress', 0.0)*100)}%")
-            cols[2].text("downloading...")
-            cols[3].text("- - - - - - - - - - -")
-        elif video["status"] == "success":
-            cols[1].progress(1.0)
-            cols[2].markdown("✅ Success")
-            file_path = video["file_path"]
-            if file_path and os.path.exists(file_path):
-                mime_type, _ = mimetypes.guess_type(file_path)
-                with open(file_path, "rb") as f:
-                    video_data = f.read()
-                cols[3].download_button(
-                    label="Download",
-                    data=video_data,
-                    file_name=os.path.basename(file_path),
-                    mime=mime_type or "application/octet-stream",
-                    key=f"download_{idx}"
-                )
-        elif video["status"] == "failed":
-            cols[1].progress(0)
-            cols[2].markdown("❌ Failed")
-            if cols[3].button("Try Again", key=f"retry_{idx}"):
-                st.session_state["download_queue"][idx]["status"] = "waiting"
+            seen = set()
+            st.session_state["download_queue"] = []
+            for u in urls_input.split("\n"):
+                u = u.strip()
+                if u:
+                    u = clean_facebook_url(u)
+                    if u not in seen:
+                        if is_valid_facebook_video_url(u):
+                            seen.add(u)
+                            st.session_state["download_queue"].append({"url": u, "status": "waiting", "file_path": None, "progress": 0})
+                        else:
+                            st.warning(f"⚠️ Skipped invalid: {u}")
+            
+            if not st.session_state["download_queue"]:
+                st.warning("No valid Facebook video URLs found!")
+            else:
                 st.session_state["is_processing"] = True
                 st.rerun()
+
+# --- Download Queue Display ---
+if st.session_state["download_queue"]:
+    st.subheader("Download Queue")
+    for idx, video in enumerate(st.session_state["download_queue"]):
+        with st.container(border=True):
+            video_url = video["url"]
+            # Use vertical_alignment="center" for better alignment of text and components
+            cols = st.columns([0.5, 5, 2, 2.5], vertical_alignment="center")
+            
+            # Col 0: Index
+            cols[0].text(f"#{idx+1}")
+            
+            # Col 1: URL Info
+            MAX_LEN = 35
+            cols[1].text(video_url[:MAX_LEN] + "...")
+            # Col 2: Progress/Status
+            if video["status"] == "waiting":
+                cols[2].info("Waiting...")
+            elif video["status"] == "downloading":
+                cols[2].progress(video.get("progress", 0.0))
+            elif video["status"] == "success":
+                cols[2].success("Done!")
+            elif video["status"] == "failed":
+                cols[2].error("Failed")
+
+            # Col 3: Action Button
+            if video["status"] == "success":
+                file_path = video["file_path"]
+                if file_path and os.path.exists(file_path):
+                    mime_type, _ = mimetypes.guess_type(file_path)
+                    with open(file_path, "rb") as f:
+                        video_data = f.read()
+                    cols[3].download_button(
+                        label="⬇️ Save",
+                        data=video_data,
+                        file_name=os.path.basename(file_path),
+                        mime=mime_type or "application/octet-stream",
+                        key=f"download_{idx}",
+                        use_container_width=True,
+                        help="Download the video file."
+                    )
+            elif video["status"] == "failed":
+                if cols[3].button("🔄 Retry", key=f"retry_{idx}", use_container_width=True):
+                    st.session_state["download_queue"][idx]["status"] = "waiting"
+                    st.session_state["is_processing"] = True
+                    st.rerun()
+            else:
+                cols[3].empty()
 
     # Process next video in the queue if one is not already downloading
     if st.session_state["is_processing"]:
@@ -295,6 +301,20 @@ if st.session_state["download_queue"]:
 # -----------------------------
 st.write("---")
 year = datetime.datetime.now().year
-_, col, _ = st.columns([4, 2.5, 2])
-with col:
-    st.caption(f"© {year} All rights reserved.")
+st.markdown(
+    f"""
+    <style>
+    .footer {{
+        text-align: center;
+        color: #808080;
+        padding-top: 20px;
+        padding-bottom: 20px;
+        font-size: 0.85rem;
+    }}
+    </style>
+    <div class="footer">
+        © {year} All rights reserved.
+    </div>
+    """,
+    unsafe_allow_html=True
+)

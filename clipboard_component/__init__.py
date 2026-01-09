@@ -18,7 +18,8 @@ _copy_component_func = components.declare_component("copy_component", path=build
 def paste_component(
     name: str,
     disabled: bool = False,
-    styles: dict = None
+    styles: dict = None,
+    **kwargs
 ) -> str:
     """Custom clipboard button with full styling control."""
     if 'clipboard_processed' not in st.session_state:
@@ -27,7 +28,8 @@ def paste_component(
     component_value = _paste_component_func(
         name=name,
         disabled=disabled,
-        styles=styles or {}
+        styles=styles or {},
+        **kwargs
     )
 
     if not component_value or 'timestamp' not in component_value:
