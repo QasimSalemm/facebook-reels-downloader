@@ -9,6 +9,8 @@ from pathlib import Path
 import re
 from urllib.parse import urlparse, urlunparse
 import clipboard_component
+import zipfile
+import io
 
 # -----------------------------
 # Initialize session state for urls and download status
@@ -319,6 +321,34 @@ if st.session_state["download_queue"]:
 
     if any(v['status'] == "success" for v in st.session_state["download_queue"]):
         st.info(f"Downloads are saved to: {DOWNLOAD_DIR}")
+        
+        # --- Save All Videos Button ---
+        success_videos = [v for v in st.session_state["download_queue"] if v['status'] == "success" and v['file_path'] and os.path.exists(v['file_path'])]
+        
+        if success_videos:
+            st.write("")
+            
+            # --- Generate ZIP in memory ---
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+                for v in success_videos:
+                    file_path = v['file_path']
+                    arcname = os.path.basename(file_path)
+                    zip_file.write(file_path, arcname)
+            
+            zip_buffer.seek(0)
+            
+            # --- Single Save All Button ---
+            st.download_button(
+                label="📥 Save All Videos (ZIP)",
+                data=zip_buffer,
+                file_name=f"facebook_reels_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+                mime="application/zip",
+                key="download_all_zip_final",
+                use_container_width=True,
+                type="primary",
+                help="Download all finished videos in one ZIP file"
+            )
 
 # -----------------------------
 # --- Utility Actions (Reset/Clear) at Bottom ---
