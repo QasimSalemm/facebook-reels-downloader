@@ -274,7 +274,7 @@ if st.session_state["download_queue"]:
                             file_data = st.session_state["ready_to_download_files"][idx]
                             mime_type, _ = mimetypes.guess_type(file_path)
                             st.download_button(
-                                label="Save",
+                                label="💾 Download Now",
                                 data=file_data,
                                 file_name=os.path.basename(file_path),
                                 mime=mime_type or "application/octet-stream",
@@ -283,15 +283,20 @@ if st.session_state["download_queue"]:
                             )
                         else:
                             # Show prepare button
-                            if st.button("Prepare downloading", key=f"prepare_{idx}", use_container_width=True):
-                                with st.spinner("Reading file..."):
-                                    try:
-                                        with open(file_path, "rb") as f:
-                                            video_data = f.read()
-                                        st.session_state["ready_to_download_files"][idx] = video_data
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error("Failed to read file")
+                            if st.button("☁️ Prepare Download", key=f"prepare_{idx}", use_container_width=True):
+                                # Show immediate feedback in the status column
+                                progress_placeholders[idx].info("⏳ Preparing...")
+                                st.toast(f"📁 Reading video {idx+1}...", icon="⏳")
+                                
+                                try:
+                                    with open(file_path, "rb") as f:
+                                        video_data = f.read()
+                                    st.session_state["ready_to_download_files"][idx] = video_data
+                                    st.toast(f"✅ Video {idx+1} ready to download!", icon="✅")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error("❌ Failed to prepare file")
+                                    st.toast(f"❌ Error: {str(e)}", icon="❌")
                 elif status == "failed":
                     if st.button("Retry", key=f"retry_{idx}", use_container_width=True):
                         st.session_state["download_queue"][idx]["status"] = "waiting"
@@ -350,7 +355,7 @@ if st.session_state["download_queue"]:
             if st.session_state["prepared_zip_data"] is not None:
                 # Show the actual download button
                 st.download_button(
-                    label="Save All Videos (ZIP)",
+                    label="📥 Download All Videos (ZIP)",
                     data=st.session_state["prepared_zip_data"],
                     file_name=f"facebook_reels_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
                     mime="application/zip",
@@ -361,19 +366,21 @@ if st.session_state["download_queue"]:
                 )
             else:
                 # Show prepare button
-                if st.button("Prepare ZIP Download", use_container_width=True, type="primary"):
-                    with st.spinner("Compressing videos..."):
-                        # --- Generate ZIP in memory ---
-                        zip_buffer = io.BytesIO()
-                        with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-                            for v in success_videos:
-                                file_path = v['file_path']
-                                arcname = os.path.basename(file_path)
-                                zip_file.write(file_path, arcname)
-                        
-                        zip_buffer.seek(0)
-                        st.session_state["prepared_zip_data"] = zip_buffer.getvalue()
-                        st.rerun()
+                if st.button("📦 Prepare ZIP Download", use_container_width=True, type="primary"):
+                    st.toast(f"🗜️ Compressing {len(success_videos)} videos...", icon="⏳")
+                    
+                    # --- Generate ZIP in memory ---
+                    zip_buffer = io.BytesIO()
+                    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+                        for v in success_videos:
+                            file_path = v['file_path']
+                            arcname = os.path.basename(file_path)
+                            zip_file.write(file_path, arcname)
+                    
+                    zip_buffer.seek(0)
+                    st.session_state["prepared_zip_data"] = zip_buffer.getvalue()
+                    st.toast("✅ ZIP file ready to download!", icon="✅")
+                    st.rerun()
 
 # -----------------------------
 # --- Utility Actions (Reset/Clear) at Bottom ---
